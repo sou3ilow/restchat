@@ -1,5 +1,7 @@
 
 const port = 8888;
+const base_path = "/v1"
+
 const cors_allow_origin = '*'
 const cors_allow_method = 'POST'
 
@@ -7,11 +9,7 @@ require('console-info');
 require('console-warn');
 require('console-error');
 
-const express = require("express");
-const app = express();
-app.use(express.json());
-
-const base_path = "/v1"
+/* DB wrap */
 
 process.env.AWS_PROFILE='restchat' 
 const aws = require('aws-sdk');
@@ -19,19 +17,15 @@ aws.config.update({region: 'us-west-1'});
 const table_name = "messages";
 const time_to_live = 5 * 60; // sec
 
-/* DB wrap */
 function DB() {
 	this.db = new aws.DynamoDB({apiVersion: '2012-08-10'});
-}
-
-DB.prototype.length = function(m){
 }
 
 DB.prototype.push = function(m){
 	let params = {
 		TableName: table_name,
 		Item: m
-	}
+	};
 
 	this.db.putItem(params, (err, data)=> {
 		if (err) {
@@ -58,7 +52,7 @@ DB.prototype.query = function(timestamp, except, onscan) {
 		},
 		ExpressionAttributeValues: {
 			':except': {'S': except},
-			':newerthan': { 'N': String(timestamp) } // hack
+			':newerthan': {'N': String(timestamp) } // hack
 		}
 	};
 
@@ -86,6 +80,11 @@ DB.prototype.query = function(timestamp, except, onscan) {
 let db = new DB();
 
 /* front */
+const express = require("express");
+const app = express();
+
+app.use(express.json());
+
 app.use((req, res, next) => {
     res.append('Access-Control-Allow-Origin', cors_allow_origin);
     res.append('Access-Control-Allow-Methods', cors_allow_method);
@@ -139,7 +138,7 @@ app.post(base_path + '/post', function(req, res) {
 
 	db.push(m);
 	console.info("new message" + JSON.stringify(m));
-	console.info("total " + db.length);
+	//console.info("total " + db.length);
 	res.status(200).send("");
 });
 
