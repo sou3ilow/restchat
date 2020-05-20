@@ -93,8 +93,8 @@ definitions:
         type: string
         example: "hello world"
       timestamp:
-        type: string
-        format: date-time
+        type: number
+        format: integer
         description: "optional"
       sign:
         type: string
@@ -111,9 +111,9 @@ definitions:
     type: object
     properties:
       from:
-        type: string
-        format: date-time
-        description: timestamp to retrive. if ommmited all data is retrived
+        type: number
+        format: integer
+        description: timestamp to retrive. if negative value is specified, date.now - value is set. if blank, 0 is set(all data is retrived).
       except:
         type: string
         format: uuid
