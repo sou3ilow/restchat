@@ -39,29 +39,20 @@ DB.prototype.query = function(timestamp, except) {
 
 let db = new DB();
 
-///*
 app.use((req, res, next) => {
     res.append('Access-Control-Allow-Origin', cors_allow_origin);
     res.append('Access-Control-Allow-Methods', cors_allow_method);
     res.append('Access-Control-Allow-Headers', 'Content-Type');
-	res.type('application/json')
     next();
 });
-/*/
-app.use((req, res, next) => {
-    res.append('Access-Control-Allow-Origin', ['*']);
-    res.append('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE');
-    res.append('Access-Control-Allow-Headers', 'Content-Type');
-    next();
-});
-//*/
+
 app.post(base_path + "/query", function(req, res) {
 	console.info("query is called");
 	let body = req.body;
 
 	let resbody = db.query(body.timestamp, body.except);
 	console.info(resbody.length + "results");
-	res.send(resbody);
+	res.type('application/json').send(resbody);
 });
 
 app.post(base_path + '/post', function(req, res) {
