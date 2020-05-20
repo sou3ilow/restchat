@@ -1,0 +1,123 @@
+swagger: '2.0'
+info:
+  description: >-
+    This is a chat server 
+  version: 1.0.0
+  title: Chat
+  termsOfService: 'n/a'
+host: localhost:8888
+basePath: /v1
+
+schemes:
+  - https
+  - http
+paths:
+  /post:
+    post:
+      summary: send a new message to DB
+      description: ''
+      operationId: postMessage
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: body
+          name: body
+          description: message to broad cast
+          required: true
+          schema:
+            $ref: '#/definitions/Message'
+      responses:
+        '200':
+          description: OK
+          
+        '400':
+          description: Invalid input
+      security:
+        - petstore_auth:
+            - 'write:pets'
+            - 'read:pets'
+  /query:  
+    post:
+      summary: get messages that matche to condition 
+      description: 'retrive messages'
+      operationId: getMessages
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: body
+          name: body
+          description: option
+          required: false
+          schema:
+            $ref: '#/definitions/Query'
+      responses:
+        '200':
+          description: A list of users
+          schema:
+            $ref: '#/definitions/Messages'
+        '400':
+          description: Invalid request
+      security:
+        - petstore_auth:
+            - 'write:pets'
+            - 'read:pets'
+securityDefinitions:
+  petstore_auth:
+    type: oauth2
+    authorizationUrl: 'http://petstore.swagger.io/oauth/dialog'
+    flow: implicit
+    scopes:
+      'write:pets': modify pets in your account
+      'read:pets': read your pets
+  api_key:
+    type: apiKey
+    name: api_key
+    in: header
+definitions:
+  Message:
+    type: object
+    required:
+      - type
+      - message
+    properties:
+      type:
+        type: string
+        enum:
+          - text
+          - b64
+      message:
+        type: string
+        example: "hello world"
+      timestamp:
+        type: string
+        format: date-time
+        description: "optional"
+      sign:
+        type: string
+        format: uuid
+        description: "optional"
+  Messages:
+    type: object
+    properties:
+      messages:
+        type: array
+        items:
+          $ref: '#/definitions/Message'
+  Query:
+    type: object
+    properties:
+      from:
+        type: string
+        format: date-time
+        description: timestamp to retrive. if ommmited all data is retrived
+      except:
+        type: string
+        format: uuid
+        description: id that should be filtered
+externalDocs:
+  description: Find out more about Swagger
+  url: 'http://swagger.io'
