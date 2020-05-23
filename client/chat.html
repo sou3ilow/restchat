@@ -1,0 +1,341 @@
+
+<script>
+
+let url = "http://localhost:8888/v1" 
+
+let encoder = new TextEncoder();
+let decoder = new TextDecoder();
+
+// Promise(encoded_key, reason)
+function create_key_from_phrase(key_phrase) {
+	return new Promise(function(createkey_resolve, createkey_reject) {
+		// step 1. phrase to digest
+		// step 2. digest to key
+		let phrase_in_bytes = encoder.encode(key_phrase);
+		crypto.subtle.digest("SHA-256", phrase_in_bytes).then(
+		(digest)=>{
+			let key_buffer = new Uint8Array(digest, 0, 16) // 16byte
+			crypto.subtle.importKey("raw", key_buffer.buffer, 'AES-CTR', false,  ["encrypt", "decrypt"]).then(
+			(encoded_key)=> {
+				createkey_resolve(encoded_key);
+			}, (import_rejected_because)=>{
+				createkey_reject("create_key failed in import", import_rejected_because)
+			});
+		}, (digest_reject_because)=>{
+			createkey_reject("create_key failed in digest ", digest_reject_because);
+		});
+	});
+}
+
+// elem: any object
+function on_keyphrase_chnage(elem) {
+	create_key_from_phrase(elem.value).then((encoded_key)=>{
+		elem.encoded_key = encoded_key;	
+		console.info("[update key]success", encoded_key);
+	},(reason)=>{
+		// not tested
+		console.error("[update key]failed", reason);
+	});
+}
+
+
+// return string: uuid
+// https://qiita.com/psn/items/d7ac5bdb5b5633bae165
+function generate_uuid() {
+	// https://github.com/GoogleChrome/chrome-platform-analytics/blob/master/src/internal/identifier.js
+	// const FORMAT: string = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
+	let chars = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".split("");
+	for (let i = 0, len = chars.length; i < len; i++) {
+		switch (chars[i]) {
+			case "x":
+			chars[i] = Math.floor(Math.random() * 16).toString(16);
+			break;
+			case "y":
+			chars[i] = (Math.floor(Math.random() * 4) + 8).toString(16);
+			break;
+		}
+	}
+	return chars.join("");
+}
+
+// enc_message: uint8array
+function decrypt_async(enc_message, key) {
+	let counter = new Uint8Array(16);
+	return crypto.subtle.decrypt({ name: "AES-CTR", counter, length: 64 }, key, enc_message);
+}
+
+// plain_message: string
+// key: uint8[16]
+// return: promise(encrypted_message, reson)
+function encrypt_async(plain_message, key) {
+	let encoded = encoder.encode(plain_message); // byte array
+	//let counter = crypto.getRandomValues(new Uint8Array(16));
+	let counter = new Uint8Array(16);
+	return crypto.subtle.encrypt({ name: "AES-CTR", counter, length: 64 }, key, encoded);
+}
+
+function init() {
+	// save sign
+	let my_sign = generate_uuid();
+
+	// setup secret => key conversion
+	let key_elem = document.getElementById("key");
+	on_keyphrase_chnage(key_elem); // first call
+	key_elem.addEventListener('change', on_keyphrase_chnage.bind(null, key_elem));
+
+	// wait manager
+	// hack	
+	let poll_control = {
+		// timestamp of last access to the server	
+		// as time. initial is epoc
+		last_fetched: 0,
+		// timestamp of last message retrieved
+		last_message_retirived: 0,
+
+		wait: 1000, // ms
+		_max_wait: 60 * 1000,
+		_up_factor: 2,
+		reset: () => {
+			poll_control.wait = 1000;
+		},
+		slow: () => {
+			poll_control.wait = Math.floor(poll_control.wait * poll_control._up_factor), poll_control._max_wait;
+			//console.info("poll_control", poll_control.wait);
+		},
+		is_over: () => {
+			return poll_control._max_wait < poll_control.wait;
+		},
+
+		// keep timout handler
+		timeout_id: null
+	};
+
+	// on_message_arrived: ([{Message}])
+	// on_polling_stopped: (XHR)
+	// if a poll retrived at leaset one message, set minimum interval for next poll
+	// if no message is fetched, the interval is extended
+	// otherwise i.e., a poll is failed, polling is stopped
+	function poll_message(on_message_arrived, on_polling_stoped) {
+		poll_control.timeout_id = null;
+
+		var xhr = new XMLHttpRequest();
+		xhr.open('POST', url + "/query");
+		xhr.setRequestHeader("Content-Type", "application/json");
+
+		// not test yet
+		xhr.onerror = function(event) {
+			on_polling_stoped("xhr request failed with an errror");
+		}
+		xhr.onload = function() {
+			if ( xhr.status != 200 ) {
+				console.error(xhr.response);
+				on_polling_stoped("xhr.status =" + xhr.status);
+			} else {
+				let data = JSON.parse(xhr.response);
+				console.info(data.length, "records from", new Date(poll_control.last_fetched));
+				poll_control.last_fetched = Date.now(); // HACK
+				if ( data.length != 0 ) {
+					poll_control.last_message_retirived = Date.now();
+					on_message_arrived(data);
+					poll_control.reset();
+				} else {
+					poll_control.slow(); // 遅める
+				}
+
+				if ( poll_control.is_over() ) {
+					on_polling_stoped("no updated within " + (Date.now() - poll_control.last_message_retirived) + "ms");
+				} else {
+					console.info("next wait is", poll_control.wait, "ms");
+					poll_control.timeout_id = setTimeout(
+						poll_message.bind(null, on_message_arrived, on_polling_stoped),
+						poll_control.wait);
+				}
+			}
+		}
+		let filter_condition = {
+			from: poll_control.last_fetched, //HACK
+			//sign: my_sign // should use
+		}
+
+		// may cause net::ERR_CONNECTION_REFUSED but no way found to catch it :(
+		xhr.send(JSON.stringify(filter_condition));
+	}
+
+	// err_message: string
+	function on_polling_stoped(error_message) {
+		log("system", "polling stopped [" + error_message + "] click 'poll' to restart");
+		polling_button.disabled = false; // activated for manual retry
+	}
+
+	// data: Message[]
+	function on_message_arrived(data) {
+
+		console.log("data recived!");
+		// [type message, sign, timestamp]
+		console.log(data);
+		for (let i=0; i<data.length; i++ ) {
+			let obj = data[i];
+			log(obj.type, obj.message, obj.timestamp, obj.sign);
+		}
+	}
+
+	// start polling
+	poll_message(on_message_arrived, on_polling_stoped);
+	log("system", "server is " + url);
+
+	// set up pollin button
+	let polling_button = document.getElementById('polling_button');
+	polling_button.disabled = true; // inital disabled
+	polling_button.addEventListener('click', function() {
+		polling_button.disabled = true; // disabled again
+		// HACK need to cancel xhr 
+		//if ( poll_control.timeout_id != null ) {
+		//	console.info("timer canceled");
+		//	clearTimeout(poll_control.timeout_id);
+		//	poll_control.timeout_id = null;
+		//}
+		poll_control.reset();
+		poll_message(on_message_arrived, on_polling_stoped)
+	});
+
+	// type: string/enum(system, b64, text)
+	// messge: string/b64|plain 
+	// timestamp: integer/timestamp
+	// sing: string/euiccid
+	function log(type, message, timestamp, sign) {
+
+		timestamp = timestamp || Date.now();
+		sign = sign || "system"
+		let log = document.getElementById("log");
+		let key = document.getElementById("key");
+		let div = document.createElement('div'); // hack
+		let msg = document.createElement('pre'); // hack
+		div.className = "log_message";
+		msg.dataset.type=type;
+		msg.dataset.original_message=message;
+		msg.dataset.timestamp=new Date();
+		let span = document.createElement('span');
+
+		if ( type == "system" ) {
+			msg.innerHTML = message;
+		} else {
+			msg.innerHTML = "..decrypting"
+			let encrypted = Uint8Array.from(atob(message), c => c.charCodeAt(0)); // b64message to array
+			decrypt_async(encrypted, key.encoded_key).then((decrypted_message)=>{
+				// decrypted message is byte array
+				let text = decoder.decode(decrypted_message);
+				msg.innerHTML = text;
+			}, (rejected_reason)=>{
+				msg.innerHTML = "decrypt failed" + rejected_reason;
+			});
+		}
+		span.innerHTML = new Date(timestamp) + " ~ " + sign + ( sign == my_sign ? "(me)" : "");
+		div.appendChild(msg);
+		div.appendChild(span);
+		
+		//log.appendChild(message); // 末尾
+		log.insertBefore(div, log.firstChild); // 先頭
+	}
+
+	// type: b64/text
+	// message: string
+	function send_via_xhr(type, message) {
+		var xhr = new XMLHttpRequest();
+		xhr.open('POST', url + "/post");
+		xhr.setRequestHeader("Content-Type", "application/json");
+		xhr.onerror = function() {
+			console.error("[send] error", xhr.responseText); // HACK
+		}
+		xhr.onload = function() {
+			console.info("[send] success"); // HACK
+		}
+		let data = {
+			//timestamp: Date.now()
+			sign: my_sign,
+			type: type,
+			message: message
+		}
+		xhr.send(JSON.stringify(data));
+	}
+
+	// plain_message: string
+	// key: crypted
+	// onrejected: function(reason)
+	function submit_message(plain_message, key){
+		encrypt_async(plain_message, key).then((encrypted_bytes)=>{
+			let b64message =  btoa(String.fromCharCode.apply(null, new Uint8Array(encrypted_bytes)));
+			//console.info(encrypted_bytes);
+			//console.info(b64message);
+			send_via_xhr("b64", b64message);
+			}, (rejected_reason)=>{
+			log("system", "encode failed" * rejected_reason);
+		});
+	}
+
+	// set up send button
+	let send_button = document.getElementById('send_button');
+	send_button.addEventListener('click', function() {
+		let send_message = document.getElementById('send_message');
+		let key = document.getElementById("key");
+		submit_message(send_message.value, key.encoded_key);
+	});
+
+}
+
+document.addEventListener("DOMContentLoaded", function(){
+	init();
+});
+
+</script>
+<style>
+
+#send_message {
+  width: 300px;
+  height: 100px;
+  padding: 5px;
+  border-radius: 5px;
+  border: 1px solid lightblue;
+}
+#key{
+  padding-left: 5px;
+  border-radius: 5px;
+  border: 1px solid lightblue;
+}
+
+.log_message {
+	border-left: 1px solid lightblue;
+	padding-left: 5px;
+	margin: 5px 5px;
+    border-left: 2px solid hsl(195, 53%, 79%);
+    padding: 0px 0px 0px 10px;
+    margin: 5px 0px 10px 10px;
+    font-family: sans-serif;
+    font-size: small;
+}
+
+.log_message > pre {
+	font-size: 100%;
+}
+
+.log_message > span {
+	font-size: 80%;
+	color: gray;
+	font-style: italic;
+}
+
+
+</style>
+
+<textarea id=send_message>
+rest chat
+</textarea>
+
+<div>
+<button id=send_button>send</button>
+<button id=polling_button>poll</button>
+
+<input type=text id=key placeholder="key value" value="secret"></input>
+</div>
+
+<div id=log> </div>
+

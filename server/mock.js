@@ -143,6 +143,7 @@ app.post(base_path + '/post', function(req, res) {
 });
 
 app.listen(port, function() {
-	console.info("listen start");
+	console.info("listen start at port=", port);
+	console.info("base path is", base_path);
 });
 
