@@ -12,6 +12,13 @@ schemes:
   - https
   - http
 paths:
+  /:
+    get:
+      summary: test
+      description: test
+      responses:
+        '200':
+          description: OK
   /post:
     post:
       summary: send a new message to DB

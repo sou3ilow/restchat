@@ -1,0 +1,618 @@
+<html>
+<head>
+<title>Chat</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no">
+
+</head>
+
+<body>
+</body>
+</html>
+<style>
+
+/*
+button, input, select, textarea {
+	font-size: 1rem;
+}
+
+div, pre, span {
+	font-size: 1rem;
+}
+*/
+
+
+button {
+	border-radius: 5px;
+	background-color: hsl(200, 100%, 95%);
+	transition: background-color .5s;
+	border-width: 1px;
+}
+button:hover {
+	background-color: hsl(200, 100%, 90%);
+}
+button:disabled {
+	background-color: lightgray;
+}
+
+@media screen and (max-width:800px) { 
+	body, div, span, pre {
+		font-size: 16px;
+	}
+	button, input, select, textarea {
+		font-family: inherit;
+		font-size: 100%;
+	}
+	#inputs {
+		width: 94%;
+		margin: 2% auto;
+	}
+	#message_area {
+		width: 100%;
+		height: 5rem;
+		padding: 5px;
+		border-radius: 5px;
+		border: 1px solid hsl(200, 100%, 85%);
+		margin: 2px;
+	}
+
+	#keyphrase_input{
+		padding-left: 5px;
+		border-radius: 5px;
+		border: 1px solid hsl(200, 100%, 85%);
+		width: 7rem;
+	}
+
+	#log_pain {
+		width: 96%;
+	}
+
+	.log_message {
+		border-left: 1px solid hsl(200, 100%, 85%);
+		width: auto;
+		padding: 0.1rem 0.5rem;
+		margin: 0.6rem 0.1rem;
+		/*font-family: sans-serif;
+		font-size: 1rem;*/
+	}
+
+	.log_message_pre {
+		margin: 0;
+		padding: 0;
+		/*font-family: sans-serif;
+		font-size: 2rem;*/
+		white-space:pre-wrap;
+		font-size: 9pt;
+	}
+
+	.log_message_span {
+		display: block;
+		width: auto;
+		text-align: right;
+		margin-left: 3rem;
+		padding: 0;
+		color: gray;
+		font-style: italic;
+		font-size: 9pt;
+	}
+
+}
+@media screen and (min-width:800px) { 
+	body, div, span, pre {
+		font-size: 16px;
+	}
+	button, input, select, textarea {
+		font-family: inherit;
+		font-size: 100%;
+	}
+	body {
+		width: 800px;
+		margin-right: auto;
+		margin-left: auto;
+	}
+	#inputs {
+		width: 760px;
+		margin-left: 20px;
+		margin-right: 20px;
+		margin-top: 2%;
+		margin-bottom: 2%;
+	}
+	#message_area {
+		width: 100%;
+		height: 5rem;
+		padding: 5px;
+		border-radius: 5px;
+		border: 2px solid hsl(200, 100%, 85%);
+		margin: 2px;
+	}
+
+	#keyphrase_input{
+		padding-left: 5px;
+		border-radius: 5px;
+		border: 2px solid hsl(200, 100%, 85%);
+		width: 7rem;
+	}
+
+	#log_pain {
+		width: 96%;
+	}
+
+	.log_message {
+		border-left: 5px solid hsl(200, 100%, 85%);
+		width: auto;
+		padding: 0.1rem 0.5rem;
+		margin: 0.6rem 0.1rem;
+		font-size: 15pt;
+	}
+
+	.log_message_pre {
+		margin: 0;
+		padding: 0;
+		white-space:pre-wrap;
+		font-size: 15pt;
+	}
+
+	.log_message_span {
+		display: block;
+		width: auto;
+		text-align: right;
+		margin-left: 3rem;
+		padding: 0;
+		color: gray;
+		font-style: italic;
+		font-size: 12pt;
+	}
+}
+#inputs.ontop {
+	position: fixed;
+	top: 0;
+	right: auto; left: auto;
+}
+#inputs.onbottom {
+	position: fixed;
+	bottom: 0;
+	right: auto; left: auto;
+}
+
+#log_pain.ontop {
+	margin: 150px 2%; 0px;
+}
+
+#log_pain.onbottom {
+	margin: 0px 2% 150px;
+}
+
+.log_message {
+	animation: new_message 2s;
+}
+
+.new_message {
+	color: white;
+	opacity: 0;
+/*	transition: all 1s ease-in 0;*/
+}
+
+@keyframes new_message {
+	/*
+  0% { color: black; }
+  25% { color: lightgray; }
+  50% { color: black; }
+  75% { color: lightgray; }
+  100% { color: black; }
+	*/
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  50% { opacity: 0; }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+</style>
+
+<script>
+
+let url = document.location.origin + document.location.pathname.replace(/\/[^/]*$/, "");
+let encoder = new TextEncoder();
+let decoder = new TextDecoder();
+
+// Promise(encoded_key, reason)
+function create_key_from_phrase(key_phrase) {
+	return new Promise(function(createkey_resolve, createkey_reject) {
+		// step 1. phrase to digest
+		// step 2. digest to key
+		let phrase_in_bytes = encoder.encode(key_phrase);
+		crypto.subtle.digest("SHA-256", phrase_in_bytes).then(
+		(digest)=>{
+			let key_buffer = new Uint8Array(digest, 0, 16) // 16byte
+			crypto.subtle.importKey("raw", key_buffer.buffer, 'AES-CTR', false,  ["encrypt", "decrypt"]).then(
+			(encoded_key)=> {
+				createkey_resolve(encoded_key);
+			}, (import_rejected_because)=>{
+				createkey_reject("create_key failed in import", import_rejected_because)
+			});
+		}, (digest_reject_because)=>{
+			createkey_reject("create_key failed in digest ", digest_reject_because);
+		});
+	});
+}
+
+// elem: any object
+function on_keyphrase_chnage(elem) {
+	create_key_from_phrase(elem.value).then((encoded_key)=>{
+		elem.encoded_key = encoded_key;	
+		console.info("[update key]success", encoded_key);
+	},(reason)=>{
+		// not tested
+		console.error("[update key]failed", reason);
+	});
+}
+
+
+// return string: uuid
+// https://qiita.com/psn/items/d7ac5bdb5b5633bae165
+function generate_uuid() {
+	// https://github.com/GoogleChrome/chrome-platform-analytics/blob/master/src/internal/identifier.js
+	// const FORMAT: string = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
+	let chars = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".split("");
+	for (let i = 0, len = chars.length; i < len; i++) {
+		switch (chars[i]) {
+			case "x":
+			chars[i] = Math.floor(Math.random() * 16).toString(16);
+			break;
+			case "y":
+			chars[i] = (Math.floor(Math.random() * 4) + 8).toString(16);
+			break;
+		}
+	}
+	return chars.join("");
+}
+function generate_color() {
+	let chars = "#xxxxxx".split("");
+	for (let i = 0, len = chars.length; i < len; i++) {
+		switch (chars[i]) {
+			case "x":
+			chars[i] = Math.floor(Math.random() * 16).toString(16);
+			break;
+		}
+	}
+	return chars.join("");
+}
+
+// enc_message: uint8array
+function decrypt_async(enc_message, key) {
+	let counter = new Uint8Array(16);
+	return crypto.subtle.decrypt({ name: "AES-CTR", counter, length: 64 }, key, enc_message);
+}
+
+// plain_message: string
+// key: uint8[16]
+// return: promise(encrypted_message, reson)
+function encrypt_async(plain_message, key) {
+	let encoded = encoder.encode(plain_message); // byte array
+	//let counter = crypto.getRandomValues(new Uint8Array(16));
+	let counter = new Uint8Array(16);
+	return crypto.subtle.encrypt({ name: "AES-CTR", counter, length: 64 }, key, encoded);
+}
+
+function init() {
+	// save sign
+	let my_sign = generate_color();
+
+	// setup secret => key conversion
+	let key_elem = document.getElementById("keyphrase_input");
+	on_keyphrase_chnage(key_elem); // first call
+	key_elem.addEventListener('change', on_keyphrase_chnage.bind(null, key_elem));
+
+	// wait manager
+	let poll_control = {
+		// timestamp of last access to the server	
+		// as time. initial is epoc
+		last_fetched: 0,
+
+		// timestamp of last message retrieved
+		last_message_retirived: 0,
+
+		wait: 1000, // ms
+
+		// keep timout handler
+		timeout_id: null,
+
+		reset: () => {
+			poll_control.wait = 1000;
+		},
+
+		slow: () => {
+			let up_factor = 2;
+			poll_control.wait = Math.floor(poll_control.wait * up_factor)
+			//console.info("poll_control", poll_control.wait);
+		},
+
+		is_over: () => {
+			let max_wait = 60 * 1000;
+			return max_wait < poll_control.wait;
+		},
+
+		is_polling: () => {
+			return !!poll_control.timeout_id;
+		},
+
+		stop: (error_message) => {
+			log("system", error_message + "\nPolling stoped. Click 'poll' to restart");
+			polling_button.state_ready();
+		},
+
+		cancel: () => {
+			if ( !!poll_control.timeout_id ) {
+				console.info(poll_control.timeout_id, "=> null");
+				clearTimeout(poll_control.timeout_id);
+				poll_control.timeout_id = null;
+			}
+		},
+
+		reset_start: () => {
+			poll_control.cancel();
+			poll_message();
+			polling_button.state_inprogress();
+		}
+	};
+
+	// if a poll retrived at leaset one message, set minimum interval for next poll
+	// if no message is fetched, the interval is extended
+	// otherwise i.e., a poll is failed, polling is stopped
+	function poll_message() {
+		// on_message_arrived: ([{Message}])
+		// on_polling_stopped: (XHR)
+
+		// not test yet
+		function on_error() {
+			poll_control.stop("xhr request failed with an errror");
+		}
+
+		function on_load() {
+			if ( xhr.status != 200 ) {
+				console.error(xhr.response);
+				poll_control.stop("xhr.status =" + xhr.status);
+			} else {
+				let data = JSON.parse(xhr.response);
+				console.info(data.length, "records from", (new Date(poll_control.last_fetched)).getTime());
+				poll_control.last_fetched = Date.now(); // HACK
+				if ( data.length != 0 ) {
+					data.sort((a, b) => { return a.timestamp - b.timestamp; })
+					poll_control.last_message_retirived = data[data.length-1].timestamp;
+					on_message_arrived(data);
+					poll_control.reset();
+				} else {
+					poll_control.slow(); // 遅める
+				}
+
+				if ( poll_control.is_over() ) {
+					poll_control.stop("no update from " + (new Date(poll_control.last_message_retirived)).toLocaleString());
+				} else {
+					let id = setTimeout(poll_message, poll_control.wait);
+					console.info("next wait is", poll_control.wait, "ms", poll_control.timeout_id, "=>", id);
+					poll_control.timeout_id = id;
+
+				}
+			}
+		}
+
+		var xhr = new XMLHttpRequest();
+		xhr.open('POST', url + "/query");
+		xhr.setRequestHeader("Content-Type", "application/json");
+		xhr.onerror = on_error;
+		xhr.onload = on_load;
+
+		let filter_condition = {
+			//from: poll_control.last_fetched, //HACK
+			from: poll_control.last_message_retirived,
+			//sign: my_sign // should use
+		}
+		// may cause net::ERR_CONNECTION_REFUSED but no way found to catch it :(
+		xhr.send(JSON.stringify(filter_condition));
+	}
+
+	// data: Message[]
+	function on_message_arrived(data) {
+
+		console.log("data recived!");
+		// [type message, sign, timestamp]
+		console.log(data);
+		for (let i=0; i<data.length; i++ ) {
+			let obj = data[i];
+			log(obj.type, obj.message, obj.timestamp, obj.sign);
+		}
+	}
+
+	// set up pollin button
+	let polling_button = document.getElementById('polling_button');
+	polling_button.state_ready = function() {
+		this.disabled = false;
+		this.innerHTML = "poll"
+	}
+	polling_button.state_inprogress = function() {
+		this.disabled = true;
+		this.innerHTML = "polling"
+	}
+	polling_button.state_inprogress();
+	polling_button.addEventListener('click', function() {
+		polling_button.state_inprogress();
+		poll_control.reset_start();
+	});
+
+	// type: string/enum(system, b64, text)
+	// messge: string/b64|plain 
+	// timestamp: integer/timestamp
+	// sing: string/euiccid
+	function log(type, message, timestamp, sign) {
+
+		timestamp = timestamp || Date.now();
+		sign = sign || "system"
+		let log = document.getElementById("log_pain");
+		let key = document.getElementById("keyphrase_input");
+		let div = document.createElement('div'); // hack
+		let msg = document.createElement('pre'); // hack
+		div.classList.add('log_message');
+		msg.dataset.type=type;
+		msg.dataset.original_message=message;
+		msg.dataset.timestamp=timestamp;
+		msg.className = "log_message_pre";
+		
+		let span = document.createElement('span');
+		span.className = "log_message_span"
+
+		if ( type == "system" ) {
+			msg.innerHTML = message;
+		} else {
+			msg.innerHTML = "..decrypting"
+			let encrypted = Uint8Array.from(atob(message), c => c.charCodeAt(0)); // b64message to array
+			decrypt_async(encrypted, key.encoded_key).then((decrypted_message)=>{
+				// decrypted message is byte array
+				let text = decoder.decode(decrypted_message);
+				msg.innerHTML = text;
+			}, (rejected_reason)=>{
+				msg.innerHTML = "decrypt failed" + rejected_reason;
+			});
+		}
+		span.innerHTML = (new Date(timestamp)).toLocaleString() + 
+			" ~ " + sign + ( sign == my_sign ? "(me)" : "");
+		if ( /#.{6}/.test(sign) ) { // color signature
+			span.style.color = sign; // HACK
+		}
+		div.appendChild(msg);
+		div.appendChild(span);
+	
+		if ( upsidedown_check.checked ) {	
+			log.appendChild(div); // 末尾
+		} else {
+			log.insertBefore(div, log.firstChild); // 先頭
+		}
+	}
+
+	// type: b64/text
+	// message: string
+	function send_via_xhr(type, message, on_complete) {
+		var xhr = new XMLHttpRequest();
+		xhr.open('POST', url + "/post");
+		xhr.setRequestHeader("Content-Type", "application/json");
+		xhr.onerror = function() {
+			console.error("[send] error", xhr.responseText); // HACK
+		}
+		xhr.onload = function() {
+			console.info("[send] success"); // HACK
+			if (on_complete) on_complete();
+		}
+		let data = {
+			//timestamp: Date.now()
+			sign: my_sign,
+			type: type,
+			message: message
+		}
+		xhr.send(JSON.stringify(data));
+	}
+
+	// plain_message: string
+	// key: crypted
+	// onrejected: function(reason)
+	function submit_message(plain_message, key, on_complete){
+		encrypt_async(plain_message, key).then((encrypted_bytes)=>{
+			let b64message =  btoa(String.fromCharCode.apply(null, new Uint8Array(encrypted_bytes)));
+			//console.info(encrypted_bytes);
+			//console.info(b64message);
+			send_via_xhr("b64", b64message,()=>{
+				poll_control.reset();
+				if (on_complete) on_complete();
+			});
+			}, (rejected_reason)=>{
+			log("system", "encode failed" * rejected_reason);
+		});
+	}
+
+	// set up send button
+	let send_button = document.getElementById('send_button');
+	send_button.state_inprogress = function(){
+		this.innerHTML = "sending"
+		this.disabled = true;
+	}
+	send_button.state_ready = function(){
+		this.innerHTML = "send"
+		this.disabled = false;
+	}
+	send_button.state_ready();
+	function on_submit() {
+		send_button.state_inprogress();
+		let send_message = document.getElementById('message_area');
+		let key = document.getElementById("keyphrase_input");
+
+		console.info("submit at", Date.now());
+		
+		submit_message(send_message.value, key.encoded_key, function(){
+			send_message.value = "";
+			send_button.state_ready();
+			poll_control.reset_start();
+		});
+	}
+	send_button.addEventListener('click',on_submit);
+	let form = document.getElementById('inputs');
+	inputs.addEventListener('submit', on_submit);
+
+	let upsidedown_check = document.getElementById('upsidedown_checkbox');
+	upsidedown_check.addEventListener('change', function(){
+		upsidedown_check.disabled = true; // lock
+
+		// upside down
+		let pain = document.getElementById('log_pain');
+		let logs = Array.from(pain.getElementsByClassName('log_message'));
+		let comp = upsidedown_check.checked ?
+			(a, b) => { return a.firstChild.dataset.timestamp - b.firstChild.dataset.timestamp; } :
+			(a, b) => { return b.firstChild.dataset.timestamp - a.firstChild.dataset.timestamp; } ;
+
+		logs.sort(comp);
+		for ( let l of logs ) {
+			pain.appendChild(pain.removeChild(l));
+		}
+
+		let inputs = document.getElementById("inputs");
+		let log_pain = document.getElementById('log_pain');
+
+		inputs.classList.toggle('ontop');
+		inputs.classList.toggle('onbottom');
+		log_pain.classList.toggle('onbottom');
+		log_pain.classList.toggle('ontop');
+
+		upsidedown_check.disabled = false; // unlock
+	});
+
+	//let message_area = document.getElementById('message_area');
+
+	// start polling
+	poll_control.reset_start();
+	log("system", "Server is " + url);
+}
+
+document.addEventListener("DOMContentLoaded", function(){
+	init();
+});
+
+</script>
+</head>
+<body>
+<form id=inputs class=ontop>
+<textarea id=message_area onclick=select()>
+1. Change secret key phrase if needed
+2. Write message and click send button
+3. Click poll if polling stopped
+</textarea>
+
+<div>
+<button type=submit id=send_button>send</button>
+<button id=polling_button>poll</button>
+<input type=checkbox id=upsidedown_checkbox value="upsidedown"/>
+<label for=upsidedown_checkbox>UpDown</label>
+<input type=text id=keyphrase_input placeholder="key value" value="key phrase" onclick=select() />
+</div>
+</form>
+
+<div id=log_pain class=ontop> </div>
+<body>
+</html>
+
