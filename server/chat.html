@@ -427,11 +427,11 @@ function init() {
 	let polling_button = document.getElementById('polling_button');
 	polling_button.state_ready = function() {
 		this.disabled = false;
-		this.innerHTML = "poll"
+		this.innerText = "poll"
 	}
 	polling_button.state_inprogress = function() {
 		this.disabled = true;
-		this.innerHTML = "polling"
+		this.innerText = "polling"
 	}
 	polling_button.state_inprogress();
 	polling_button.addEventListener('click', function() {
@@ -461,19 +461,19 @@ function init() {
 		span.className = "log_message_span"
 
 		if ( type == "system" ) {
-			msg.innerHTML = message;
+			msg.innerText = message;
 		} else {
-			msg.innerHTML = "..decrypting"
+			msg.innerText = "decrypting"
 			let encrypted = Uint8Array.from(atob(message), c => c.charCodeAt(0)); // b64message to array
 			decrypt_async(encrypted, key.encoded_key).then((decrypted_message)=>{
 				// decrypted message is byte array
 				let text = decoder.decode(decrypted_message);
-				msg.innerHTML = text;
+				msg.innerText = text;
 			}, (rejected_reason)=>{
-				msg.innerHTML = "decrypt failed" + rejected_reason;
+				msg.innerText = "decrypt failed" + rejected_reason;
 			});
 		}
-		span.innerHTML = (new Date(timestamp)).toLocaleString() + 
+		span.innerText = (new Date(timestamp)).toLocaleString() + 
 			" ~ " + sign + ( sign == my_sign ? "(me)" : "");
 		if ( /#.{6}/.test(sign) ) { // color signature
 			span.style.color = sign; // HACK
@@ -530,11 +530,11 @@ function init() {
 	// set up send button
 	let send_button = document.getElementById('send_button');
 	send_button.state_inprogress = function(){
-		this.innerHTML = "sending"
+		this.innerText = "sending"
 		this.disabled = true;
 	}
 	send_button.state_ready = function(){
-		this.innerHTML = "send"
+		this.innerText = "send"
 		this.disabled = false;
 	}
 	send_button.state_ready();
