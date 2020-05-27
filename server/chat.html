@@ -11,17 +11,6 @@
 </html>
 <style>
 
-/*
-button, input, select, textarea {
-	font-size: 1rem;
-}
-
-div, pre, span {
-	font-size: 1rem;
-}
-*/
-
-
 button {
 	border-radius: 5px;
 	background-color: hsl(200, 100%, 95%);
@@ -350,6 +339,7 @@ function init() {
 		},
 
 		reset_start: () => {
+			poll_control.wait = 1000;
 			poll_control.cancel();
 			poll_message();
 			polling_button.state_inprogress();
@@ -433,11 +423,11 @@ function init() {
 		this.disabled = true;
 		this.innerText = "polling"
 	}
-	polling_button.state_inprogress();
 	polling_button.addEventListener('click', function() {
 		polling_button.state_inprogress();
 		poll_control.reset_start();
 	});
+	polling_button.state_inprogress();
 
 	// type: string/enum(system, b64, text)
 	// messge: string/b64|plain 
@@ -553,7 +543,7 @@ function init() {
 	}
 	send_button.addEventListener('click',on_submit);
 	let form = document.getElementById('inputs');
-	inputs.addEventListener('submit', on_submit);
+	//form.addEventListener('submit', on_submit);
 
 	let upsidedown_check = document.getElementById('upsidedown_checkbox');
 	upsidedown_check.addEventListener('change', function(){
@@ -582,6 +572,34 @@ function init() {
 		upsidedown_check.disabled = false; // unlock
 	});
 
+	let redec_button = document.getElementById('redec_button');
+	redec_button.addEventListener('click', function(){
+		let logs = document.getElementsByClassName("log_message");
+		let key = document.getElementById("keyphrase_input");
+		for ( let l of logs ) {
+			let msg = l.firstChild; // HACK
+			let type = msg.dataset.type;
+			if ( type == "system" ) {
+				continue;
+			}
+			msg.innerText = "decrypting"
+			let message = msg.dataset.original_message;
+			let timestamp = msg.dataset.timestamp;
+			let encrypted = Uint8Array.from(atob(message), c => c.charCodeAt(0)); // b64message to array
+			(function() {
+				let target = msg; // save pointer
+				decrypt_async(encrypted, key.encoded_key).then((decrypted_message)=>{
+					// decrypted message is byte array
+					let text = decoder.decode(decrypted_message);
+					msg.innerText = text;
+				}, (rejected_reason)=>{
+					msg.innerText = "decrypt failed" + rejected_reason;
+				});
+			})();
+		}
+	});
+	
+
 	//let message_area = document.getElementById('message_area');
 
 	// start polling
@@ -596,7 +614,7 @@ document.addEventListener("DOMContentLoaded", function(){
 </script>
 </head>
 <body>
-<form id=inputs class=ontop>
+<div id=inputs class=ontop>
 <textarea id=message_area onclick=select()>
 1. Change secret key phrase if needed
 2. Write message and click send button
@@ -604,13 +622,14 @@ document.addEventListener("DOMContentLoaded", function(){
 </textarea>
 
 <div>
-<button type=submit id=send_button>send</button>
+<button id=send_button>send</button>
 <button id=polling_button>poll</button>
 <input type=checkbox id=upsidedown_checkbox value="upsidedown"/>
 <label for=upsidedown_checkbox>UpDown</label>
 <input type=text id=keyphrase_input placeholder="key value" value="key phrase" onclick=select() />
+<button id=redec_button>ReDec</button>
 </div>
-</form>
+</div>
 
 <div id=log_pain class=ontop> </div>
 <body>
