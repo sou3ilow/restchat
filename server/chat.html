@@ -45,7 +45,7 @@ button:disabled {
 		margin: 2px;
 	}
 
-	#keyphrase_input{
+	#keyphrase_input, #redec_keyphrase{
 		padding-left: 5px;
 		border-radius: 5px;
 		border: 1px solid hsl(200, 100%, 85%);
@@ -84,7 +84,6 @@ button:disabled {
 		font-style: italic;
 		font-size: 9pt;
 	}
-
 }
 @media screen and (min-width:800px) { 
 	body, div, span, pre {
@@ -115,7 +114,7 @@ button:disabled {
 		margin: 2px;
 	}
 
-	#keyphrase_input{
+	#keyphrase_input, #redec_keyphrase{
 		padding-left: 5px;
 		border-radius: 5px;
 		border: 2px solid hsl(200, 100%, 85%);
@@ -175,20 +174,32 @@ button:disabled {
 	animation: new_message 2s;
 }
 
+.log_message {
+	position: relative;
+}
+
 .new_message {
 	color: white;
 	opacity: 0;
 /*	transition: all 1s ease-in 0;*/
 }
 
+#context_box {
+	filter: drop-shadow(5px 5px 5px gray);
+	position: absolute;
+	top: 50%;
+	left: 20%;
+	z-index: 10;
+}
+
+.hidden {
+	transition: all .5 ease;
+	visibility: hidden;
+	opacity: 0;
+	/*display: none;*/
+}
+
 @keyframes new_message {
-	/*
-  0% { color: black; }
-  25% { color: lightgray; }
-  50% { color: black; }
-  75% { color: lightgray; }
-  100% { color: black; }
-	*/
   0% { opacity: 0; }
   25% { opacity: 1; }
   50% { opacity: 0; }
@@ -200,9 +211,11 @@ button:disabled {
 
 <script>
 
-let url = document.location.origin + document.location.pathname.replace(/\/[^/]*$/, "");
+let url = document.location.origin + document.location.pathname;
+let url_base = document.location.origin + document.location.pathname.replace(/\/[^/]*$/, "");
 let encoder = new TextEncoder();
 let decoder = new TextDecoder();
+let keyStorage = {}
 
 // Promise(encoded_key, reason)
 function create_key_from_phrase(key_phrase) {
@@ -227,8 +240,9 @@ function create_key_from_phrase(key_phrase) {
 
 // elem: any object
 function on_keyphrase_chnage(elem) {
+	localStorage.phrase = elem.value;
 	create_key_from_phrase(elem.value).then((encoded_key)=>{
-		elem.encoded_key = encoded_key;	
+		keyStorage.encoded_key = encoded_key;
 		console.info("[update key]success", encoded_key);
 	},(reason)=>{
 		// not tested
@@ -283,12 +297,15 @@ function encrypt_async(plain_message, key) {
 	return crypto.subtle.encrypt({ name: "AES-CTR", counter, length: 64 }, key, encoded);
 }
 
+
 function init() {
 	// save sign
 	let my_sign = generate_color();
 
 	// setup secret => key conversion
+	let key_phrase = localStorage.phrase || "";
 	let key_elem = document.getElementById("keyphrase_input");
+	key_elem.value = key_phrase;
 	on_keyphrase_chnage(key_elem); // first call
 	key_elem.addEventListener('change', on_keyphrase_chnage.bind(null, key_elem));
 
@@ -376,7 +393,7 @@ function init() {
 				}
 
 				if ( poll_control.is_over() ) {
-					poll_control.stop("no update from " + (new Date(poll_control.last_message_retirived)).toLocaleString());
+					poll_control.stop("No update from " + (new Date(poll_control.last_message_retirived)).toLocaleString());
 				} else {
 					let id = setTimeout(poll_message, poll_control.wait);
 					console.info("next wait is", poll_control.wait, "ms", poll_control.timeout_id, "=>", id);
@@ -387,7 +404,7 @@ function init() {
 		}
 
 		var xhr = new XMLHttpRequest();
-		xhr.open('POST', url + "/query");
+		xhr.open('POST', url_base + "/query");
 		xhr.setRequestHeader("Content-Type", "application/json");
 		xhr.onerror = on_error;
 		xhr.onload = on_load;
@@ -429,6 +446,7 @@ function init() {
 	});
 	polling_button.state_inprogress();
 
+
 	// type: string/enum(system, b64, text)
 	// messge: string/b64|plain 
 	// timestamp: integer/timestamp
@@ -442,23 +460,35 @@ function init() {
 		let div = document.createElement('div'); // hack
 		let msg = document.createElement('pre'); // hack
 		div.classList.add('log_message');
+		div.addEventListener('click', show_context_box);
 		msg.dataset.type=type;
 		msg.dataset.original_message=message;
 		msg.dataset.timestamp=timestamp;
 		msg.className = "log_message_pre";
+
 		
 		let span = document.createElement('span');
 		span.className = "log_message_span"
 
+		let url = new RegExp("^(https?|ftp)(:\/\/[-_.!~*\'()a-zA-Z0-9;\/?:\@&=+\$,%#]+)$");
+
 		if ( type == "system" ) {
-			msg.innerText = message;
+			if ( message.match(url) ) {
+				msg.innerHTML = '<a target=_blank href=' + message + '>' + message + '</a>';
+			} else {
+				msg.innerText = message;
+			}
 		} else {
 			msg.innerText = "decrypting"
 			let encrypted = Uint8Array.from(atob(message), c => c.charCodeAt(0)); // b64message to array
-			decrypt_async(encrypted, key.encoded_key).then((decrypted_message)=>{
+			decrypt_async(encrypted, keyStorage.encoded_key).then((decrypted_message)=>{
 				// decrypted message is byte array
 				let text = decoder.decode(decrypted_message);
-				msg.innerText = text;
+				if ( text.match(url) ) {
+					msg.innerHTML = '<a target=_blank href=' + text + '>' + text + '</a>';
+				} else {
+					msg.innerText = text;
+				}
 			}, (rejected_reason)=>{
 				msg.innerText = "decrypt failed" + rejected_reason;
 			});
@@ -482,7 +512,7 @@ function init() {
 	// message: string
 	function send_via_xhr(type, message, on_complete) {
 		var xhr = new XMLHttpRequest();
-		xhr.open('POST', url + "/post");
+		xhr.open('POST', url_base + "/post");
 		xhr.setRequestHeader("Content-Type", "application/json");
 		xhr.onerror = function() {
 			console.error("[send] error", xhr.responseText); // HACK
@@ -506,8 +536,6 @@ function init() {
 	function submit_message(plain_message, key, on_complete){
 		encrypt_async(plain_message, key).then((encrypted_bytes)=>{
 			let b64message =  btoa(String.fromCharCode.apply(null, new Uint8Array(encrypted_bytes)));
-			//console.info(encrypted_bytes);
-			//console.info(b64message);
 			send_via_xhr("b64", b64message,()=>{
 				poll_control.reset();
 				if (on_complete) on_complete();
@@ -527,26 +555,36 @@ function init() {
 		this.innerText = "send"
 		this.disabled = false;
 	}
+
+	let confirmed = false;
+
 	send_button.state_ready();
-	function on_submit() {
+	async function on_submit() {
+		let key = document.getElementById("keyphrase_input");
+
+		if ( key.value == "" ) {
+			confirmed = confirmed || confirm("keyphrase is blank. continue?");
+			if ( !confirmed )
+				return;
+		}
+
 		send_button.state_inprogress();
 		let send_message = document.getElementById('message_area');
-		let key = document.getElementById("keyphrase_input");
 
 		console.info("submit at", Date.now());
 		
-		submit_message(send_message.value, key.encoded_key, function(){
+		submit_message(send_message.value, keyStorage.encoded_key, function(){
 			send_message.value = "";
 			send_button.state_ready();
 			poll_control.reset_start();
 		});
 	}
 	send_button.addEventListener('click',on_submit);
-	let form = document.getElementById('inputs');
+	//let form = document.getElementById('inputs');
 	//form.addEventListener('submit', on_submit);
 
-	let upsidedown_check = document.getElementById('upsidedown_checkbox');
-	upsidedown_check.addEventListener('change', function(){
+	let upsidedown_check = document.getElementById('upsidedown_button');
+	upsidedown_check.addEventListener('click', function(){
 		upsidedown_check.disabled = true; // lock
 
 		// upside down
@@ -572,7 +610,7 @@ function init() {
 		upsidedown_check.disabled = false; // unlock
 	});
 
-	let redec_button = document.getElementById('redec_button');
+	/*let redec_button = document.getElementById('redec_button');
 	redec_button.addEventListener('click', function(){
 		let logs = document.getElementsByClassName("log_message");
 		let key = document.getElementById("keyphrase_input");
@@ -587,8 +625,8 @@ function init() {
 			let timestamp = msg.dataset.timestamp;
 			let encrypted = Uint8Array.from(atob(message), c => c.charCodeAt(0)); // b64message to array
 			(function() {
-				let target = msg; // save pointer
-				decrypt_async(encrypted, key.encoded_key).then((decrypted_message)=>{
+				//let target = msg; // save pointer
+				decrypt_async(encrypted, keyStorage.encoded_key).then((decrypted_message)=>{
 					// decrypted message is byte array
 					let text = decoder.decode(decrypted_message);
 					msg.innerText = text;
@@ -598,13 +636,85 @@ function init() {
 			})();
 		}
 	});
+	*/
 	
 
 	//let message_area = document.getElementById('message_area');
+	let welcome = url;
+	if ( url == "https://wtxib3wh5m.execute-api.us-west-1.amazonaws.com/prod/open" ) {
+		welcome += " or shortened, 丈砦.跳.jp";
+	} 
+	log("system", welcome);
+
+	let decrypt_button = document.getElementById('decrypt_button');
+	decrypt_button.addEventListener('click', on_decrypt_click);
+
+	let copy_button = document.getElementById('copy_button');
+	copy_button.addEventListener('click', on_copy_click);
+
+	document.body.addEventListener('click', hide_context_box);
 
 	// start polling
 	poll_control.reset_start();
-	log("system", "Server is " + url);
+}
+
+function show_context_box(event) {
+	//if ( event.target != event.currentTarget ) {
+	//	return;
+	//}
+	event.stopPropagation();
+	let log_div = this;
+	let msg = this.firstChild;
+	let type = msg.dataset.type;
+
+	//if ( type == "system" ) {
+	//	return;
+	//}
+	console.log("show");
+
+	let context_box = document.getElementById('context_box');
+	context_box.classList.remove('hidden');
+	log_div.appendChild(context_box); // 移動
+}
+
+function hide_context_box(event) {
+	console.log("hide");
+	let context_box = document.getElementById('context_box');
+	context_box.classList.add('hidden');
+}
+
+async function on_decrypt_click(event) {
+	let context_box = document.getElementById('context_box');
+	context_box.classList.add('hidden');
+	let button = event.target;
+	let msg = button.parentNode.parentNode.firstChild; // HACK
+	if ( !msg ) {
+		console.error("im alone");
+		return;
+	}
+
+	msg.innerText = "decrypting"
+	let keyphrase = document.getElementById('redec_keyphrase').value;
+
+	let message = msg.dataset.original_message;
+	let encrypted = Uint8Array.from(atob(message), c => c.charCodeAt(0)); // b64message to array
+	try { 
+		let key = await create_key_from_phrase(keyphrase);
+		let decrypted_message = await decrypt_async(encrypted, key);
+		let text = decoder.decode(decrypted_message);
+		msg.innerText = text;
+
+	} catch (e) {
+		msg.innerText = "decrypt failed" + rejected_reason;
+	}
+}
+
+function on_copy_click(event) {
+	let context_box = document.getElementById('context_box');
+	context_box.classList.add('hidden');
+	let button = event.target;
+	let msg = button.parentNode.parentNode.firstChild; // HACK
+	navigator.clipboard.writeText(msg.innerText);
 }
 
 document.addEventListener("DOMContentLoaded", function(){
@@ -616,19 +726,20 @@ document.addEventListener("DOMContentLoaded", function(){
 <body>
 <div id=inputs class=ontop>
 <textarea id=message_area onclick=select()>
-1. Change secret key phrase if needed
-2. Write message and click send button
-3. Click poll if polling stopped
 </textarea>
 
 <div>
 <button id=send_button>send</button>
-<button id=polling_button>poll</button>
-<input type=checkbox id=upsidedown_checkbox value="upsidedown"/>
-<label for=upsidedown_checkbox>UpDown</label>
-<input type=text id=keyphrase_input placeholder="key value" value="key phrase" onclick=select() />
-<button id=redec_button>ReDec</button>
+<button id=polling_button title="This button is disabled while polling is on going. Poling interval is 1, 2, 4, 8 upto 60sec.">poll</button>
+<button id=upsidedown_button>&#x2195;</button>
+<input type=text id=keyphrase_input placeholder="(keyphrase)" title="To clear autofill history, select it and press delete or press shift+delete" onclick=select() />
 </div>
+</div>
+
+<div id=context_box class=hidden onclick="event.stopPropagation()">
+<input id=redec_keyphrase placeholder="(keyphrase)" onclick="select()" />
+<button id=decrypt_button>redec</button>
+<button id=copy_button>copy</button>
 </div>
 
 <div id=log_pain class=ontop> </div>
